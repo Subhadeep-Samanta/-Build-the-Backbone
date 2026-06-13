@@ -6,8 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "migrate": "psql $DATABASE_URL -f migrations/001_create_tables.sql",
-    "seed": "psql $DATABASE_URL -f migrations/002_seed_data.sql",
+    "migrate": "node scripts/run-sql.js migrations/001_create_tables.sql",
+    "seed": "node scripts/run-sql.js migrations/002_seed_data.sql",
     "test:load": "artillery run artillery-baseline.yml"
   },
   "keywords": [

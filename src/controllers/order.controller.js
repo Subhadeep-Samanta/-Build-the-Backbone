@@ -1,5 +1,5 @@
 const db = require('../db');
-const emailService = require('../lib/emailService');
+const emailQueue = require('../queues/email.queue');
 
 /**
  * Get Order History
@@ -47,28 +47,22 @@ const getOrderHistory = async (req, res) => {
             total_orders: result.rows.length,
             orders: result.rows
         });
-
     } catch (err) {
         console.error('Error fetching order history:', err);
-
-        res.status(500).json({
-            error: 'Failed to fetch order history'
-        });
+        res.status(500).json({ error: 'Failed to fetch order history' });
     }
 };
 
 /**
  * Create Order
- * Fixed synchronous email bottleneck
+ * Uses BullMQ for async confirmation emails.
  */
 const createOrder = async (req, res) => {
     const { restaurant_id, items, delivery_fee } = req.body;
     const userId = req.user.id;
 
     if (!items || items.length === 0) {
-        return res.status(400).json({
-            error: 'No items in order'
-        });
+        return res.status(400).json({ error: 'No items in order' });
     }
 
     try {
@@ -77,8 +71,6 @@ const createOrder = async (req, res) => {
         for (const item of items) {
             total += item.price * item.quantity;
         }
-
-        total += delivery_fee;
 
         const orderResult = await db.query(
             `
@@ -109,24 +101,30 @@ const createOrder = async (req, res) => {
             );
         }
 
-        // Send email asynchronously (non-blocking)
-        emailService
-            .sendConfirmation(orderId, req.user.email)
-            .catch(err => {
-                console.error('Email send failed:', err);
+        try {
+            await emailQueue.add('send-confirmation', {
+                orderId,
+                userEmail: req.user.email,
+                orderData: {
+                    id: orderId,
+                    user_id: userId,
+                    restaurant_id,
+                    total_amount: total,
+                    delivery_fee,
+                    items
+                }
             });
+        } catch (queueError) {
+            console.error('[Order Controller] Email queue error, failing open:', queueError.message);
+        }
 
         res.status(201).json({
             message: 'Order created successfully!',
             order_id: orderId
         });
-
     } catch (err) {
         console.error('Error creating order:', err);
-
-        res.status(500).json({
-            error: 'Failed to create order'
-        });
+        res.status(500).json({ error: 'Failed to create order' });
     }
 };
 
@@ -146,19 +144,13 @@ const getOrderById = async (req, res) => {
         );
 
         if (result.rows.length === 0) {
-            return res.status(404).json({
-                error: 'Order not found'
-            });
+            return res.status(404).json({ error: 'Order not found' });
         }
 
         res.json(result.rows[0]);
-
     } catch (err) {
         console.error(err);
-
-        res.status(500).json({
-            error: 'Failed to fetch order'
-        });
+        res.status(500).json({ error: 'Failed to fetch order' });
     }
 };
 

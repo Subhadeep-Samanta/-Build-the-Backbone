@@ -1,5 +1,6 @@
 const app = require('./app');
 require('dotenv').config();
+require('./workers/email.worker');
 
 const PORT = process.env.PORT || 3000;
 

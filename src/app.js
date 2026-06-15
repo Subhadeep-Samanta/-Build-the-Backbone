@@ -7,8 +7,15 @@ const authController = require('./controllers/auth.controller');
 const restaurantController = require('./controllers/restaurant.controller');
 const orderController = require('./controllers/order.controller');
 const authMiddleware = require('./middleware/auth.middleware');
+const rateLimiter = require('./middleware/rateLimiter.middleware');
 
 const app = express();
+
+const orderRateLimit = rateLimiter({
+    maxRequests: 10,
+    windowMs: 60 * 1000,
+    keyFn: (req) => `user:${req.user.id}:orders`
+});
 
 // Middleware
 app.use(express.json());
@@ -22,11 +29,15 @@ app.post('/api/auth/login', authController.login);
 app.get('/api/restaurants', restaurantController.getRestaurants);
 app.get('/api/restaurants/:id/menu', restaurantController.getMenu);
 
-// Authenticated Routes
-app.use('/api/orders', authMiddleware);
-app.post('/api/orders', orderController.createOrder);
-app.get('/api/orders/history', orderController.getOrderHistory);
-app.get('/api/orders/:id', orderController.getOrderById);
+// Restaurant mutation routes (protected)
+app.post('/api/restaurants', authMiddleware, restaurantController.createRestaurant);
+app.put('/api/restaurants/:id', authMiddleware, restaurantController.updateRestaurant);
+app.delete('/api/restaurants/:id', authMiddleware, restaurantController.deleteRestaurant);
+
+// Authenticated Order Routes
+app.post('/api/orders', authMiddleware, orderRateLimit, orderController.createOrder);
+app.get('/api/orders/history', authMiddleware, orderController.getOrderHistory);
+app.get('/api/orders/:id', authMiddleware, orderController.getOrderById);
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {
